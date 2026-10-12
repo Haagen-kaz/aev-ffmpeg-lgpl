@@ -1,0 +1,135 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+name: Build LGPL ffmpeg
+
+# AEV（omniview）に同梱する ffmpeg.exe（LGPL 最小構成）を build.sh でクロスビルドし、
+# GitHub Release（タグ ffmpeg-lgpl-<版>-r<BUILD_REV>・pre-release・latest にしない）に置く。
+# PR と main 以外の枝の手動実行は build の job（contents: read）でビルドと検査だけ。
+# Release は main への push か main での手動実行（workflow_dispatch）のときだけ、release の job（contents: write）で作る。
+# 書き込み権限を PR の実行に付けないよう job を分け、release の job は自分でビルドする
+# （job 間の受け渡しに CI の成果物＝artifact は使わない）。
+# 同じ名前の Release があれば作り直さない。build.sh が違えば BUILD_REV の上げ忘れとして止まる。
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - build.sh
+      - .github/workflows/build.yml
+      - 'LICENSES/**'
+  push:
+    branches: [main]
+    paths:
+      - build.sh
+      - .github/workflows/build.yml
+      - 'LICENSES/**'
+permissions:
+  contents: read
+
+jobs:
+  # ビルドと検査だけ（PR・main 以外の枝の手動実行）。書き込み権限は付けない。
+  build:
+    if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (mingw-w64・nasm)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mingw-w64 nasm pkg-config make zip unzip xz-utils
+
+      - name: Build ffmpeg.exe (LGPL・libopenh264・h264_mf)
+        env:
+          WORK: ${{ runner.temp }}/work
+          OUT: ${{ runner.temp }}/out
+        run: bash build.sh
+
+      # exe には mingw-w64（winpthreads を含む）と GCC の実行時部品が静的に入るので、その条文も zip に入れる。
+      # zip と SHA256SUMS は build.sh が作るため、LICENSES/ を <NAME>/licenses/ に足してから SHA256SUMS の zip の値を直す。
+      - name: Add LICENSES/ to the zip (<NAME>/licenses/)
+        env:
+          OUT: ${{ runner.temp }}/out
+        run: |
+          NAME=$(cat "$OUT/NAME")
+          STAGE="$RUNNER_TEMP/licenses-stage"
+          rm -rf "$STAGE" && mkdir -p "$STAGE/$NAME/licenses"
+          cp -- LICENSES/* "$STAGE/$NAME/licenses/"
+          (cd "$STAGE" && zip -qr "$OUT/$NAME.zip" "$NAME/licenses")
+          for f in LICENSES/*; do
+            unzip -p "$OUT/$NAME.zip" "$NAME/licenses/${f#LICENSES/}" | cmp -s - "$f" || { echo "::error::$f is not in $NAME.zip"; exit 1; }
+          done
+          zipsum=$(cd "$OUT" && sha256sum -- "$NAME.zip")
+          awk -v f="$NAME.zip" -v n="$zipsum" '$2 == f || $2 == "*" f { print n; next } { print }' "$OUT/SHA256SUMS" > "$STAGE/SHA256SUMS"
+          mv "$STAGE/SHA256SUMS" "$OUT/SHA256SUMS"
+          (cd "$OUT" && sha256sum -c --ignore-missing SHA256SUMS)
+          cat "$OUT/SHA256SUMS"
+
+  # main への push と main での手動実行だけ。審査前のコードの成果物を公開しないため。
+  # ビルドの step は build の job と同じに保つ（test/workflow.test.mjs で検査）。
+  release:
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (mingw-w64・nasm)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mingw-w64 nasm pkg-config make zip unzip xz-utils
+
+      - name: Build ffmpeg.exe (LGPL・libopenh264・h264_mf)
+        env:
+          WORK: ${{ runner.temp }}/work
+          OUT: ${{ runner.temp }}/out
+        run: bash build.sh
+
+      # exe には mingw-w64（winpthreads を含む）と GCC の実行時部品が静的に入るので、その条文も zip に入れる。
+      # zip と SHA256SUMS は build.sh が作るため、LICENSES/ を <NAME>/licenses/ に足してから SHA256SUMS の zip の値を直す。
+      - name: Add LICENSES/ to the zip (<NAME>/licenses/)
+        env:
+          OUT: ${{ runner.temp }}/out
+        run: |
+          NAME=$(cat "$OUT/NAME")
+          STAGE="$RUNNER_TEMP/licenses-stage"
+          rm -rf "$STAGE" && mkdir -p "$STAGE/$NAME/licenses"
+          cp -- LICENSES/* "$STAGE/$NAME/licenses/"
+          (cd "$STAGE" && zip -qr "$OUT/$NAME.zip" "$NAME/licenses")
+          for f in LICENSES/*; do
+            unzip -p "$OUT/$NAME.zip" "$NAME/licenses/${f#LICENSES/}" | cmp -s - "$f" || { echo "::error::$f is not in $NAME.zip"; exit 1; }
+          done
+          zipsum=$(cd "$OUT" && sha256sum -- "$NAME.zip")
+          awk -v f="$NAME.zip" -v n="$zipsum" '$2 == f || $2 == "*" f { print n; next } { print }' "$OUT/SHA256SUMS" > "$STAGE/SHA256SUMS"
+          mv "$STAGE/SHA256SUMS" "$OUT/SHA256SUMS"
+          (cd "$OUT" && sha256sum -c --ignore-missing SHA256SUMS)
+          cat "$OUT/SHA256SUMS"
+
+      - name: Publish to GitHub Release (once per name)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUT: ${{ runner.temp }}/out
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          NAME=$(cat "$OUT/NAME")
+          if gh release view "$NAME" >/dev/null 2>&1; then
+            gh release download "$NAME" -p build.sh -O "$RUNNER_TEMP/published-build.sh"
+            if ! cmp -s build.sh "$RUNNER_TEMP/published-build.sh"; then
+              echo "::error::Release $NAME already exists with a different build.sh. Raise BUILD_REV in build.sh."
+              exit 1
+            fi
+            echo "Release $NAME already exists with the same build.sh; not replaced."
+          else
+            {
+              echo "AEV に同梱する ffmpeg.exe（LGPL 2.1 以降・最小構成）。build.sh で作成（commit $TARGET_SHA・run $GITHUB_RUN_ID）。"
+              echo "対応ソース: ffmpeg-*-src.tar.xz（FFmpeg）・openh264-*-src.tar.gz（OpenH264）。configure の出力は configure.txt。"
+              echo
+              echo '```'
+              cat "$OUT/SHA256SUMS"
+              echo '```'
+            } > "$RUNNER_TEMP/notes.md"
+            gh release create "$NAME" --target "$TARGET_SHA" --prerelease --latest=false \
+              --title "$NAME" --notes-file "$RUNNER_TEMP/notes.md" \
+              "$OUT/$NAME.zip" "$OUT"/*-src.tar.* "$OUT/build.sh" "$OUT/configure.txt" "$OUT/static-runtime.txt" "$OUT/SHA256SUMS"
+          fi
