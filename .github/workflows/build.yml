@@ -13,11 +13,13 @@ on:
     paths:
       - build.sh
       - .github/workflows/build.yml
+      - 'LICENSES/**'
   push:
     branches: [main]
     paths:
       - build.sh
       - .github/workflows/build.yml
+      - 'LICENSES/**'
 permissions:
   contents: read
 
@@ -41,6 +43,26 @@ jobs:
           OUT: ${{ runner.temp }}/out
         run: bash build.sh
 
+      # exe には mingw-w64（winpthreads を含む）と GCC の実行時部品が静的に入るので、その条文も zip に入れる。
+      # zip と SHA256SUMS は build.sh が作るため、LICENSES/ を <NAME>/licenses/ に足してから SHA256SUMS の zip の値を直す。
+      - name: Add LICENSES/ to the zip (<NAME>/licenses/)
+        env:
+          OUT: ${{ runner.temp }}/out
+        run: |
+          NAME=$(cat "$OUT/NAME")
+          STAGE="$RUNNER_TEMP/licenses-stage"
+          rm -rf "$STAGE" && mkdir -p "$STAGE/$NAME/licenses"
+          cp -- LICENSES/* "$STAGE/$NAME/licenses/"
+          (cd "$STAGE" && zip -qr "$OUT/$NAME.zip" "$NAME/licenses")
+          for f in LICENSES/*; do
+            unzip -p "$OUT/$NAME.zip" "$NAME/licenses/${f#LICENSES/}" | cmp -s - "$f" || { echo "::error::$f is not in $NAME.zip"; exit 1; }
+          done
+          zipsum=$(cd "$OUT" && sha256sum -- "$NAME.zip")
+          awk -v f="$NAME.zip" -v n="$zipsum" '$2 == f || $2 == "*" f { print n; next } { print }' "$OUT/SHA256SUMS" > "$STAGE/SHA256SUMS"
+          mv "$STAGE/SHA256SUMS" "$OUT/SHA256SUMS"
+          (cd "$OUT" && sha256sum -c --ignore-missing SHA256SUMS)
+          cat "$OUT/SHA256SUMS"
+
   # main への push と main での手動実行だけ。審査前のコードの成果物を公開しないため。
   # ビルドの step は build の job と同じに保つ（test/workflow.test.mjs で検査）。
   release:
@@ -62,6 +84,26 @@ jobs:
           WORK: ${{ runner.temp }}/work
           OUT: ${{ runner.temp }}/out
         run: bash build.sh
+
+      # exe には mingw-w64（winpthreads を含む）と GCC の実行時部品が静的に入るので、その条文も zip に入れる。
+      # zip と SHA256SUMS は build.sh が作るため、LICENSES/ を <NAME>/licenses/ に足してから SHA256SUMS の zip の値を直す。
+      - name: Add LICENSES/ to the zip (<NAME>/licenses/)
+        env:
+          OUT: ${{ runner.temp }}/out
+        run: |
+          NAME=$(cat "$OUT/NAME")
+          STAGE="$RUNNER_TEMP/licenses-stage"
+          rm -rf "$STAGE" && mkdir -p "$STAGE/$NAME/licenses"
+          cp -- LICENSES/* "$STAGE/$NAME/licenses/"
+          (cd "$STAGE" && zip -qr "$OUT/$NAME.zip" "$NAME/licenses")
+          for f in LICENSES/*; do
+            unzip -p "$OUT/$NAME.zip" "$NAME/licenses/${f#LICENSES/}" | cmp -s - "$f" || { echo "::error::$f is not in $NAME.zip"; exit 1; }
+          done
+          zipsum=$(cd "$OUT" && sha256sum -- "$NAME.zip")
+          awk -v f="$NAME.zip" -v n="$zipsum" '$2 == f || $2 == "*" f { print n; next } { print }' "$OUT/SHA256SUMS" > "$STAGE/SHA256SUMS"
+          mv "$STAGE/SHA256SUMS" "$OUT/SHA256SUMS"
+          (cd "$OUT" && sha256sum -c --ignore-missing SHA256SUMS)
+          cat "$OUT/SHA256SUMS"
 
       - name: Publish to GitHub Release (once per name)
         env:

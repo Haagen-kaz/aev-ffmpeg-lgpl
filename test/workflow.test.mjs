@@ -31,12 +31,18 @@ function parseSteps(text) {
   const body = text.slice(text.indexOf('    steps:'));
   return body.split(/\n {6}- /).slice(1).map((block) => {
     const step = { name: '', run: '' };
-    const lines = block.split('\n').map((raw, i) => (i === 0 ? raw : raw.replace(/^ {8}/, '')));
+    const raws = block.split('\n');
+    const lines = raws.map((raw, i) => (i === 0 ? raw : raw.replace(/^ {8}/, '')));
     lines.forEach((line, i) => {
       const m = /^(name|if|run): (.*)$/.exec(line);
       if (!m) return;
       if (m[1] !== 'run') step[m[1]] = m[2].trim();
-      else step.run = m[2].trim() === '|' ? lines.slice(i + 1).join('\n') : m[2].trim();
+      else if (m[2].trim() !== '|') step.run = m[2].trim();
+      else {
+        // | の本文は 10 桁以上の字下げの行（と空行）だけ。最後の step の後ろの job のコメントは含めない
+        const end = raws.slice(i + 1).findIndex((raw) => raw !== '' && !/^ {10}/.test(raw));
+        step.run = lines.slice(i + 1, end < 0 ? undefined : i + 1 + end).join('\n').replace(/\n+$/, '');
+      }
     });
     return step;
   });
