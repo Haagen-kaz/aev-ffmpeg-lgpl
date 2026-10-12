@@ -13,7 +13,7 @@
 set -euo pipefail
 SELF=$(readlink -f "$0") # 下で cd するので先に絶対パスにしておく
 
-BUILD_REV=2
+BUILD_REV=3 # r3: この公開 repo の最初の Release（構成は omniview の r2 と同じ。exe はビルドごとに SHA256 が変わるので名前を分けた）
 FFMPEG_VERSION=9.0.2
 FFMPEG_COMMIT=946fcce07b6dcd0331c8cc609192aeff5e1924f8   # FFmpeg n9.0.2
 OPENH264_VERSION=2.6.0
