@@ -27,6 +27,7 @@ AEV（omniview）に同梱する ffmpeg の LGPL 最小構成ビルドと、そ�
 
 ## ライセンス
 
+- この repo の `build.sh` と `.github/workflows/` のファイル: LGPL-2.1-or-later（Copyright (c) 2026 Haagen-kaz・条文は FFmpeg と同じ [`LICENSES/FFmpeg-COPYING.LGPLv2.1`](LICENSES/FFmpeg-COPYING.LGPLv2.1)）
 - FFmpeg: LGPL-2.1-or-later — [`LICENSES/FFmpeg-COPYING.LGPLv2.1`](LICENSES/FFmpeg-COPYING.LGPLv2.1)
 - OpenH264: BSD-2-Clause — [`LICENSES/OpenH264-LICENSE`](LICENSES/OpenH264-LICENSE)
 - exe に静的に入る実行時部品（`static-runtime.txt` の記号の数を参照）。ubuntu-24.04 の mingw-w64 11.0.1・GCC 13.2.0 の版のソースから写したもので、omniview の `docs/legal/licenses/ffmpeg-components/` の写しとバイトが同じです。

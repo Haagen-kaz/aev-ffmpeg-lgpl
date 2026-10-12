@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
 name: Build LGPL ffmpeg
 
 # AEV（omniview）に同梱する ffmpeg.exe（LGPL 最小構成）を build.sh でクロスビルドし、

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# Copyright (c) 2026 Haagen-kaz
 # AEV（omniview）に同梱する ffmpeg.exe を、LGPL（2.1 以降）の最小構成で ubuntu の mingw-w64 からクロスビルドする。
 # - ソースは tag の commit SHA で固定（clone 後に rev-parse で照合。合わなければ止まる）。
 # - 外部ライブラリは libopenh264（BSD-2-Clause・同じジョブでソースからビルド）と Windows の Media Foundation（h264_mf）だけ。
